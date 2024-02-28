@@ -52,4 +52,5 @@ Mkfile.old
 dkms.conf
 
 Matrix.py
-.vscode/settings.json
+.vscode
+test.c

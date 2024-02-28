@@ -1,12 +1,24 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -Wpedantic
+
+N = 32# default
+
+DEFINE_N = -DNUM="($(N)U)"
+
+CFLAGS = -Wall -Wextra -pedantic
 DBFLAGS = -ggdb3 -gdwarf-5
-FASTFLAGS = -O3
+FASTFLAGS = -O2
 LFLAGS = -mavx2
 
+SQR_MAT_SRC = .\square_matrix.c .\constants.c
+
 fast:
-	$(CC) .\square_matrix.c -o mat.exe $(CFLAGS) $(FASTFLAGS) $(LFLAGS)
-main:
-	$(CC) .\square_matrix.c -o mat.exe $(CFLAGS) $(LFLAGS)
+	$(CC) $(DEFINE_N) $(SQR_MAT_SRC) -o mat $(CFLAGS) $(FASTFLAGS) $(LFLAGS)
+plain:
+	$(CC) $(DEFINE_N) $(SQR_MAT_SRC) -o mat $(CFLAGS) $(LFLAGS)
 db:
-	$(CC) .\square_matrix.c -o mat.exe $(CFLAGS) $(DBFLAGS) $(LFLAGS)
+	$(CC) $(DEFINE_N) $(SQR_MAT_SRC) -o mat $(CFLAGS) $(DBFLAGS) $(LFLAGS)
+pre:
+	$(CC) $(DEFINE_N) $(SQR_MAT_SRC) -o mat_pre.c -E $(CFLAGS) $(LFLAGS)
+
+lut:
+	$(CC) $(DEFINE_N) .\generate_lut.c -o lut $(CFLAGS) $(LFLAGS) $(FASTFLAGS)
