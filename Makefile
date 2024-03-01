@@ -18,7 +18,7 @@ plain:
 db:
 	$(CC) $(DEFINE_N) $(SQR_MAT_SRC) -o mat $(CFLAGS) $(DBFLAGS) $(LFLAGS)
 pre:
-	$(CC) $(DEFINE_N) $(SQR_MAT_SRC) -o mat_pre.c -E $(CFLAGS) $(LFLAGS)
+	$(CC) $(DEFINE_N) ./square_matrix.c -o mat_pre.c -E $(CFLAGS) $(LFLAGS)
 
 lut:
 	$(CC) $(DEFINE_N) .\generate_lut.c -o lut $(CFLAGS) $(LFLAGS) $(FASTFLAGS)

@@ -2709,6 +2709,7 @@ sqr_mat L_i_lut[N] = {
         {0x0000000000000000ULL, 0x0000000000000000ULL, 0x0000000000000000ULL, 0x8000000000000000ULL},
     },
 };
+#elif N == 128U
 #else
 #error "N must be (currently) either 32, 64 or 128"
 #endif

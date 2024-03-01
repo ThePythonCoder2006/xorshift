@@ -22,7 +22,11 @@
 #define LOG_SUCC_P (N)
 
 #define GET_BIT(dst, i) (((dst) >> (i)) & 0x1)
-#define GET_MAT(mat, i, j) GET_BIT(((mat_row_t *)&(MAT_ROWS_WIDTH(mat, (mat_row_t)(j / ROWS_PER_WIDTH))))[j % ROWS_PER_WIDTH], N - (i)-1)
+#if N == 128U
+#define GET_MAT(mat, i, j) GET_BIT(((uint64_t *)&(MAT_ROWS_WIDTH(mat, (uint64_t)((j) / (2 * ROWS_PER_WIDTH)) + ((j) & 1))))[j % ROWS_PER_WIDTH], N - (i)-1)
+#else
+#define GET_MAT(mat, i, j) GET_BIT(((mat_row_t *)&(MAT_ROWS_WIDTH(mat, (uint64_t)(j / (ROWS_PER_WIDTH)))))[j % ROWS_PER_WIDTH], N - (i)-1)
+#endif
 
 #define CLEAR_BIT(dst, i) ((dst) & (~(0x1 << (i))))
 
@@ -56,7 +60,7 @@ int sqr_mat_mult(sqr_mat *res, sqr_mat a, sqr_mat b);
 int sqr_mat_pow_2_to_n(sqr_mat *res, sqr_mat a, uint32_t n); // computes a^(2^n)
 int sqr_mat_bin_exp(sqr_mat *res, sqr_mat a, size_t n);      // computes a^n
 
-int mat_row_print(mat_row_t row);
+// int mat_row_print(mat_row_t row);
 size_t prime_factors(uint32_t *factors, size_t arr_size, uint64_t n);
 
 DWORD compute_sols_fixed_a(void *arg);
@@ -65,6 +69,10 @@ size_t compute_sols_fixed_a_inside(sols_list candidates, uint16_t a);
 int main(int argc, char **argv)
 {
   (void)argc, (void)argv;
+
+  sqr_mat_print(I);
+
+  return 0;
 
   // comfirmation line
   printf("[INFO] computing xorshift coefficients for N = %u => P = 0x%016llx and LOG_SUCC_P = %u, using %u threads\n", N, P, LOG_SUCC_P, THREAD_COUNT);
@@ -187,6 +195,7 @@ size_t compute_sols_fixed_a_inside(sols_list sols, uint16_t a)
   return sols_used;
 }
 
+#define _mm256_set_zero() _mm256_set1_epi64x(0)
 #if N == 32
 #define _mm256_set1(uint32_t) _mm256_set1_epi32(uint32_t)
 #define _mm256_setr(...) _mm256_setr_epi32(__VA_ARGS__)
@@ -199,12 +208,16 @@ size_t compute_sols_fixed_a_inside(sols_list sols, uint16_t a)
 #elif N == 64
 #define _mm256_set1(uint64_t) _mm256_set1_epi64x(uint64_t)
 #define _mm256_setr(...) _mm256_setr_epi64x(__VA_ARGS__)
-#define _mm256_maskload(const_uint64_ptr, __m256i) _mm256_maskload_epi64((const long long int *)(const_uint64_ptr), __m256i)
+#define _mm256_maskload(const_int_ptr, __m256i) _mm256_maskload_epi64((const long long int *)(const_int_ptr), __m256i)
 #define _mm256_sub(__m256i1, __m256i2) _mm256_sub_epi64(__m256i1, __m256i2)
 #define _mm256_sllv(__m256i1, __m256i2) _mm256_sllv_epi64(__m256i1, __m256i2)
 #define _mm256_srli(__m256i, int) _mm256_srli_epi64(__m256i, int)
 #define _mm256_slli(__m256i, int) _mm256_slli_epi64(__m256i, int)
 #define SHIFTS_OFF_VALS 0, 1, 2, 3
+#elif N == 128
+#define _mm256_slli(__m256i, int) _mm256_slli_epi16(_mm256_bslli_epi128(__m256i, int >> 3), int & 7) /* int >> 3 = int / 8 and int & 7 == int % 8*/
+#define _mm256_maskload(const_int_ptr, __m256i_mask) _mm256_maskload_epi64((const long long int *)(const_int_ptr), _mm256_permute4x64_epi64(__m256i_mask, (uint8_t)0xA5))
+#define _mm256_set1(__m128i) _mm256_broadcastsi128_si256(__m128i)
 #else
 #error "N must (currently) either 32 or 64"
 #endif
@@ -241,11 +254,15 @@ int sqr_mat_add(sqr_mat *res, sqr_mat a, sqr_mat b)
 
 int sqr_mat_mult(sqr_mat *res, sqr_mat a, sqr_mat b)
 {
+#if N == 128U
+  __m256i mask = _mm256_set_epi64x(0x8000000000000000ULL, 0ULL, 0x8000000000000000ULL, 0ULL);
+#else
   __m256i mask = _mm256_set1(((mat_row_t)1) << (N - 1)); // 0b100000...000
+#endif
 
   for (uint32_t i = 0; i < (N / ROWS_PER_WIDTH); ++i)
   {
-    MAT_ROWS_WIDTH(*res, i) = _mm256_set1(0);
+    MAT_ROWS_WIDTH(*res, i) = _mm256_set_zero();
 
     for (uint32_t j = 0; j < N; ++j)
     {
@@ -310,23 +327,23 @@ int sqr_mat_print(sqr_mat val)
   return 0;
 }
 
-#undef GET_BIT
-#define GET_BIT(val, idx) ((val) >> (idx)) & 0x1
+// #undef GET_BIT
+// #define GET_BIT(val, idx) ((val) >> (idx)) & 0x1
 
-int mat_row_print(mat_row_t row)
-{
-  for (uint8_t i = 0; i < (sizeof(row) / sizeof(uint8_t)); ++i)
-  {
-    uint8_t bits = row >> ((sizeof(row) * CHAR_BIT) - ((i + 1) * 8));
-    for (uint8_t h = 0; h < 2; ++h)
-    {
-      for (uint8_t j = h * 4; j < (h + 1) * 4; ++j)
-        printf("%u", GET_BIT(bits, CHAR_BIT - (j + 1)));
-      putchar(' ');
-    }
-  }
-  return 0;
-}
+// int mat_row_print(mat_row_t row)
+// {
+//   for (uint8_t i = 0; i < (sizeof(row) / sizeof(uint8_t)); ++i)
+//   {
+//     uint8_t bits = row >> ((sizeof(row) * CHAR_BIT) - ((i + 1) * 8));
+//     for (uint8_t h = 0; h < 2; ++h)
+//     {
+//       for (uint8_t j = h * 4; j < (h + 1) * 4; ++j)
+//         printf("%u", GET_BIT(bits, CHAR_BIT - (j + 1)));
+//       putchar(' ');
+//     }
+//   }
+//   return 0;
+// }
 
 size_t prime_factors(uint32_t *factors, size_t arr_size, uint64_t n)
 {

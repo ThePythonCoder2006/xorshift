@@ -3,7 +3,7 @@
 #include <immintrin.h>
 
 #ifndef NUM
-#define N (32U)
+#define N (128U)
 #else
 #define N (NUM)
 #endif
@@ -28,13 +28,15 @@ typedef uint32_t mat_row_t;
 #elif N == 64U
 typedef uint64_t mat_row_t;
 #define P ((uint64_t)UINT64_MAX)
+#elif N == 128U
+typedef __m128i mat_row_t;
+#define P 0ULL
+
 #else // default
 typedef uint32_t mat_row_t;
-
 #ifndef N
 #define N (32U)
 #endif
-
 #define P ((uint64_t)UINT32_MAX)
 #error "N must be (currently) either 32, 64 or 128"
 #endif
