@@ -54,3 +54,5 @@ dkms.conf
 Matrix.py
 .vscode
 test.c
+
+data/*.data

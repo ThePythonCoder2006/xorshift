@@ -1,12 +1,12 @@
-# xorshift
+# xorF
 
-This little project of mine is a sort of total suit for xorshifts. It will provide tools capable of calculating coefficients for xorshifts of any size and period.\
-It is currently only working with 32 and 64 bits. But it is stupidly fast, using both avx and concurent multithreading.\
+xorF, short for xorshift coefficients (coFicients) aims to be a sort of total suit for xorshifts. It will provide tools capable of calculating coefficients for xorshifts of any size and period.\
+It is currently only working with 32, 64 and 128 bits. But it is stupidly fast, using both avx and concurent multithreading.\
 I plan to upgrade its capabilities to work with bigger sizes, where the speed will actually be necessary to obtain answer in any reasonnable amout of time.
 
 ## Quick start
 
-compile and run the project with `make`, by replacing `#ofbits` with either `32` or `64` for, repectivily, 32 bits or 64 bits:
+compile and run the project with `make`, by replacing `#ofbits` with either `32`, `64` or `128` for, repectivily, 32, 64 or 128 bits:
 
 ```(bash)
 > make N=#ofbits
@@ -18,11 +18,10 @@ Other compile targets for make are:
 * `fast` : default, compiled with `-O2`
 * `plain` : same as `fast` but without some optimisation
 * `db` : same as `plain` but with debug info
-* `pre` : only transform with C preprocessor
 
-Which creates a program named `mat.exe`
+Which creates a program named `xorF_#ofbits.exe` in the `bin/` folder
 
-there is also `lut` to create `lut.exe` that is used to create `constants.c` which contains the look up tables for the right and left shift matrices
+there is also `lut` to create `lut.exe` that is used to create `lut_#ofbits.data` which contains binary look up tables for the right and left shift matrices
 
 ## Math
 
@@ -56,6 +55,8 @@ The whole transformation can then be thought of as:
 ```(math)
 Y_(n+1) = Y_n (I + L^a)(I + R^b)(I + L^c) = Y_n T
 ```
+
+This is not exactly the same for more than 64 bits but the spirit is similar, find matrices than represent easey (and fast) to compute operations on computer words.
 
 ### actual computation
 

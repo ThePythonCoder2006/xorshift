@@ -1,3 +1,5 @@
+#define __USE_MINGW_ANSI_STDIO 1
+
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
@@ -5,62 +7,60 @@
 
 #undef I
 
-int sqr_mat_R_shift_n(sqr_mat *ret, uint8_t n);
-int sqr_mat_L_shift_n(sqr_mat *ret, uint8_t n);
-int sqr_mat_I(sqr_mat *ret);
-int write_sqr_mat(FILE *f, sqr_mat mat);
+#if N > 64
+#undef N
+#define N (SUBN)
+#endif
+
+int sqr_mat_R_shift_n(submat *ret, uint8_t n);
+int sqr_mat_L_shift_n(submat *ret, uint8_t n);
+int sqr_mat_I(submat *ret);
+int write_sqr_mat(FILE *f, submat val);
 
 int main(int argc, char **argv)
 {
-  if (argc != 2)
-  {
-    fprintf(stderr, "[USAGE] %s <output_file_txt>\n", argv[0]);
-    return 1;
-  }
+  --argc, ++argv; // remove program name
 
-  --argc, ++argv; // remove the program name
+  // default name
+  char fname_default[] = LUT_FNAME;
+  char *fname = fname_default;
+  if (argc == 1)
+    fname = argv[0];
 
-  FILE *f = fopen(argv[0], "w");
+  printf("[INFO] creating %s to hold the look-up tables for N = %ubits\n", fname, N);
+
+  FILE *f = fopen(fname, "wb");
   if (f == NULL)
   {
-    fprintf(stderr, "[ERROR] could not open file %s : %s", argv[0], strerror(errno));
+    fprintf(stderr, "[ERROR] could not open file %s : %s", fname, strerror(errno));
     return 0;
   }
 
-  sqr_mat R_i = {0};
-  sqr_mat L_i = {0};
-  sqr_mat I = {0};
+  submat R_i = {0};
+  submat L_i = {0};
+  submat I = {0};
   sqr_mat_I(&I);
 
-  // header
-  fprintf(f, "#include \"constants.h\"\n\nsqr_mat R_i_lut[N] = {\n");
-  write_sqr_mat(f, I);
-  fprintf(f, ",\n");
-  for (uint32_t i = 1; i < N; ++i)
-  {
-    sqr_mat_R_shift_n(&R_i, i);
-    write_sqr_mat(f, R_i);
-    fprintf(f, ",\n");
-  }
-  fprintf(f, "};");
-
-  fprintf(f, "\n\nsqr_mat L_i_lut[N] = {\n");
-  write_sqr_mat(f, I);
-  fprintf(f, ",\n");
+  fwrite(&I, sizeof(I), 1, f);
   for (uint32_t i = 1; i < N; ++i)
   {
     sqr_mat_L_shift_n(&L_i, i);
-    write_sqr_mat(f, L_i);
-    fprintf(f, ",\n");
+    fwrite(&L_i, sizeof(L_i), 1, f);
   }
-  fprintf(f, "};");
+
+  fwrite(&I, sizeof(I), 1, f);
+  for (uint32_t i = 1; i < N; ++i)
+  {
+    sqr_mat_R_shift_n(&R_i, i);
+    fwrite(&R_i, sizeof(R_i), 1, f);
+  }
 
   fclose(f);
 
   return 0;
 }
 
-#if N == 32
+#if N == 32U
 #define _mm256_set1(uint32_t) _mm256_set1_epi32(uint32_t)
 #define _mm256_setr(...) _mm256_setr_epi32(__VA_ARGS__)
 #define _mm256_maskload(const_int_ptr, __m256i) _mm256_maskload_epi32((const int *)(const_int_ptr), __m256i)
@@ -69,7 +69,7 @@ int main(int argc, char **argv)
 #define _mm256_srli(__m256i, int) _mm256_srli_epi32(__m256i, int)
 #define _mm256_slli(__m256i, int) _mm256_slli_epi32(__m256i, int)
 #define SHIFTS_OFF_VALS 0, 1, 2, 3, 4, 5, 6, 7
-#elif N == 64
+#elif N == 64U
 #define _mm256_set1(uint64_t) _mm256_set1_epi64x(uint64_t)
 #define _mm256_setr(...) _mm256_setr_epi64x(__VA_ARGS__)
 #define _mm256_maskload(const_uint64_ptr, __m256i) _mm256_maskload_epi64((const long long int *)(const_uint64_ptr), __m256i)
@@ -83,7 +83,7 @@ int main(int argc, char **argv)
 #endif
 
 // set ret to a square matrix that shifts right by n
-int sqr_mat_R_shift_n(sqr_mat *ret, uint8_t n)
+int sqr_mat_R_shift_n(submat *ret, uint8_t n)
 {
   __m256i shifts_off = _mm256_setr(SHIFTS_OFF_VALS);
 
@@ -99,7 +99,7 @@ int sqr_mat_R_shift_n(sqr_mat *ret, uint8_t n)
 }
 
 // set ret to a square matrix that shifts left by n
-int sqr_mat_L_shift_n(sqr_mat *ret, uint8_t n)
+int sqr_mat_L_shift_n(submat *ret, uint8_t n)
 {
   __m256i shifts_off = _mm256_setr(SHIFTS_OFF_VALS);
 
@@ -114,7 +114,7 @@ int sqr_mat_L_shift_n(sqr_mat *ret, uint8_t n)
   return 0;
 }
 
-int sqr_mat_I(sqr_mat *ret)
+int sqr_mat_I(submat *ret)
 {
   __m256i shifts_off = _mm256_setr(SHIFTS_OFF_VALS);
 
@@ -129,26 +129,14 @@ int sqr_mat_I(sqr_mat *ret)
   return 0;
 }
 
-// writes the contents of a square matrix into a c file in a format making it includable by the main program
-int write_sqr_mat(FILE *f, sqr_mat mat)
+int sqr_mat_print(submat val)
 {
-  putc('{', f);
-  for (uint8_t i = 0; i < N / ROWS_PER_WIDTH; ++i)
+  for (uint8_t j = 0; j < N; ++j)
   {
-    putc('{', f);
-    for (uint8_t j = 0; j < sizeof(mat_width_t) / sizeof(uint64_t); ++j)
-    {
-      fprintf(f, "0x%016llxULL", ((uint64_t *)&(MAT_ROWS_WIDTH(mat, i)))[j]);
-
-      if (j != (sizeof(mat_width_t) / sizeof(uint64_t)) - 1)
-        fprintf(f, ", ");
-    }
-    putc('}', f);
-
-    // if (i != (N / ROWS_PER_WIDTH) - 1)
-    fprintf(f, ",\n");
+    for (uint8_t i = 0; i < N; ++i)
+      printf("%c ", GET_MAT(val, i, j) ? '#' : '.');
+    putchar('\n');
   }
-  putc('}', f);
 
   return 0;
 }
