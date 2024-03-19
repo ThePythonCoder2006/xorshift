@@ -21,7 +21,6 @@
 #define __SQUARE_MATRIX_SIZE__ (SUBN)
 #define __SQUARE_MATRIX_TYPE__ submat
 #define __SQUARE_MATRIX_ROW_TYPE__ subrow_t
-#define __SQUARE_MATRIX_NAMESPACE__ submat_
 #define __SQUARE_MATRIX_ROWS_PER_WIDTH__ SUBROWS_PER_SUBWIDTH
 #define __SQUARE_MATRIX_GET_MAT__ GET_SUBMAT
 #include "square_matrix.h"
@@ -32,7 +31,6 @@
 #define __SQUARE_MATRIX_SUBROW_COUNT__ SUBROWS_PER_ROW
 #define __SQUARE_MATRIX_TYPE__ sqr_mat
 #define __SQUARE_MATRIX_ROW_TYPE__ mat_row_t
-#define __SQUARE_MATRIX_NAMESPACE__ sqr_mat_
 #define __SQUARE_MATRIX_SUBMAT_NAMESPACE__ submat_
 #define __SQUARE_MATRIX_ROWS_PER_WIDTH__ ROWS_PER_WIDTH
 #define __SQUARE_MATRIX_GET_MAT__ GET_MAT
@@ -85,6 +83,7 @@ submat L_i_lut[SUBN];
 int sqr_mat_T(sqr_mat *res, uint32_t a, uint32_t b, uint32_t c);
 int is_2_to_N_periodic(sqr_mat *T);
 int submat_copy(sqr_mat *dst, submat src, size_t pos);
+int load_lookup_tables(submat (*L_i)[SUBN], submat (*R_i)[SUBN], char *fname);
 
 DWORD compute_sols_fixed_a(void *arg);
 size_t compute_sols_fixed_a_inside(sols_list candidates, uint16_t a);
@@ -100,21 +99,8 @@ int main(int argc, char **argv)
   if (argc > 0)
     strncpy(lut_fname, argv[0], 255);
 
-  FILE *f_L = fopen(lut_fname, "rb");
-  FILE *f_R = fopen(lut_fname, "rb");
-  if (f_L == NULL || f_R == NULL)
-  {
-    fprintf(stderr, "something went wrong when opening \"%s\" : %s\n", lut_fname, strerror(errno));
+  if (load_lookup_tables(&L_i_lut, &R_i_lut, lut_fname))
     return 69;
-  }
-  fseek(f_R, SUBN * sizeof(submat), SEEK_SET); // jump to R_i data
-
-  // loading the look-up tables
-  fread(L_i_lut, sizeof(submat), SUBN, f_L);
-  fread(R_i_lut, sizeof(submat), SUBN, f_R);
-
-  fclose(f_L);
-  fclose(f_R);
 
   // comfirmation line
   printf("[INFO] computing xorshift coefficients for N = %ubits implemented using %" PRIu64 " uint%u_t%c, with period, P = 2^%u - 1, using %u threads\n", N, SUBROWS_PER_ROW, SUBN, SUBROWS_PER_ROW > 1 ? 's' : 0, N, THREAD_COUNT);
@@ -133,7 +119,7 @@ int main(int argc, char **argv)
   for (uint16_t a = 1; a < SUBN; ++a)
     sols_datas[a - 1].a = a;
 
-  // main loops
+  // start thread by batches of THREAD_COUNT
   for (uint16_t j = 0; j < (SUBN - 1); j += THREAD_COUNT)
   {
     for (uint8_t i = 0; i < THREAD_COUNT; ++i)
@@ -141,7 +127,7 @@ int main(int argc, char **argv)
       if (i + j >= (SUBN - 1))
         break;
 
-      // each thread tries b and c for its own a
+      // each thread tries `b` and `c` for its own `a`
       thread_array[i] = CreateThread(NULL, 0, &compute_sols_fixed_a, &(sols_datas[j + i]), 0, &thread_id_array[i]);
 
       if (thread_array[i] == NULL)
@@ -314,3 +300,25 @@ int submat_copy(sqr_mat *dst, submat src, size_t pos)
   return 0;
 }
 #endif
+
+/* parentheses are necessary: https://cdecl.org/?q=int+%28*R_i%29%5B32%5D */
+int load_lookup_tables(submat (*L_i)[SUBN], submat (*R_i)[SUBN], char *fname)
+{
+  FILE *f_L = fopen(fname, "rb");
+  FILE *f_R = fopen(fname, "rb");
+  if (f_L == NULL || f_R == NULL)
+  {
+    fprintf(stderr, "something went wrong when opening \"%s\" : %s\n", fname, strerror(errno));
+    return 1;
+  }
+  fseek(f_R, SUBN * sizeof(submat), SEEK_SET); // jump to R_i data
+
+  // loading the look-up tables
+  fread(L_i, sizeof(submat), SUBN, f_L);
+  fread(R_i, sizeof(submat), SUBN, f_R);
+
+  fclose(f_L);
+  fclose(f_R);
+
+  return 0;
+}

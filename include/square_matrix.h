@@ -1,5 +1,8 @@
 #ifdef __SQUARE_MATRIX_IMPLEMENTATION__
 
+#define XCONC(A, B) A##B
+#define CONC(A, B) XCONC(A, B)
+
 #ifndef __SQUARE_MATRIX_SIZE__
 #error "[ERRROR] you must define a matrix size before including this header !!!"
 #endif
@@ -16,7 +19,7 @@
 #endif
 
 #ifndef __SQUARE_MATRIX_NAMESPACE__
-#error "[ERROR] you must define a namespace before including this header !!!"
+#define __SQUARE_MATRIX_NAMESPACE__ CONC(__SQUARE_MATRIX_TYPE__, _)
 #endif
 
 #if !defined(__SQUARE_MATRIX_SUBMAT_NAMESPACE__) && defined(__SQUARE_MATRIX_MULT_SUBMAT__)
@@ -44,9 +47,6 @@
 #endif
 #define __SQUARE_MATRIX_GET_MAT__ GET_MAT
 #endif
-
-#define XCONC(A, B) A##B
-#define CONC(A, B) XCONC(A, B)
 
 #define FN_NAME(str) CONC(__SQUARE_MATRIX_NAMESPACE__, str)
 #define SUBMAT_FN_NAME(str) CONC(__SQUARE_MATRIX_SUBMAT_NAMESPACE__, str)

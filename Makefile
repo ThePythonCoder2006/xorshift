@@ -50,7 +50,7 @@ CFLAGS := $(WARN_FLAGS) $(LFLAGS)
 BASE_OBJ_FNAME := $(ODIR)/%$(SUBMULT_SUFFIX)
 XORF_SRC := $(wildcard $(SRCDIR)/*.c)
 XORF_OBJ := $(XORF_SRC:$(SRCDIR)/%.c=$(BASE_OBJ_FNAME)$(FNAME_SUFFIX).o)
-XORF_DB_OBJ := $(XORF_SRC:$(SRCDIR)/%.c=$(BASZ_OVJ_SUFFIX)$(DB_SUFFIX)$(FNAME_SUFFIX).o)
+XORF_DB_OBJ := $(XORF_SRC:$(SRCDIR)/%.c=$(BASE_OBJ_FNAME)$(DB_SUFFIX)$(FNAME_SUFFIX).o)
 
 IFILES := $(wildcard $(IDIR)/*.h)
 
@@ -80,31 +80,28 @@ run: $(OUT)
 plain: $(OUT) run
 
 fast: comp_fast run
-
 comp_fast: set_fast $(OUT)
-
 set_fast:
 	$(eval CFLAGS += $(FASTFLAGS))
 
-$(OUT): $(XORF_OBJ) | $(BINDIR)
+run_db: $(OUT_DB)
+	gdb ./$<
+db: comp_db run_db
+comp_db: set_db $(OUT_DB)
+set_db:
+	$(eval CFLAGS += $(DBFLAGS))
+
+$(OUT): $(XORF_OBJ)
+$(OUT_DB): $(XORF_DB_OBJ)
+
+$(OUT) $(OUT_DB): | $(BINDIR)
 	$(CC) $(DEFINE_N) $^ -o $@ $(CFLAGS)
 pre:
 	$(CC) $(DEFINE_N) $(SRCDIR)/square_matrix.c -o mat_pre.c -E $(CFLAGS)
 
-$(BASE_OBJ_FNAME)$(FNAME_SUFFIX).o:$(SRCDIR)/%.c Makefile $(IFILES)| $(ODIR)
+$(BASE_OBJ_FNAME)$(FNAME_SUFFIX).o $(BASE_OBJ_FNAME)$(DB_SUFFIX)$(FNAME_SUFFIX).o:$(SRCDIR)/%.c Makefile $(IFILES)| $(ODIR)
 	$(CC) $(DEFINE_N) $< -c -o $@ $(CFLAGS)
 
-# ---------------- db --------------------
-
-db: $(OUT_DB)
-	gdb ./$<
-comp_db: $(OUT_DB)
-
-$(OUT_DB): $(XORF_DB_OBJ) | $(BINDIR)
-	$(CC) $(DEFINE_N) $^ -o $@ $(CFLAGS) $(DBFLAGS)
-
-$(BASE_OBJ_FNAME)$(DB_SUFFIX)$(FNAME_SUFFIX).o:$(SRCDIR)/%.c Makefile $(IFILES)| $(ODIR)
-	$(CC) $(DEFINE_N) $< -c -o $@ $(CFLAGS) $(DBFLAGS)
 
 # ---------------- lut -------------------
 
