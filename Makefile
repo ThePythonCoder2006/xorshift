@@ -7,7 +7,13 @@ ifeq ($(N),64)
 	SUBN := $(N)
 endif
 
-DEFINE_N := -DNUM="($(N)U)" -DSNUM="($(SUBN)U)"
+DEFINE_N = -DNUM="($(N)U)" -DSNUM="($(SUBN)U)"
+
+ifneq ($(N), 32)
+	ifeq ($(SUB_MULT), 1)
+		DEFINE_N := $(DEFINE_N) -DUSE_SUBMAT_MULT
+	endif
+endif
 
 DB_SUFFIX :=_db
 
@@ -19,9 +25,20 @@ BINDIR := bin
 LUTDIR := $(SRCDIR)/lut
 DDIR := data
 
-OUT := $(BINDIR)/xorF_$(N).exe
-LUT_OUT := $(BINDIR)/lut_$(N).exe
-OUT_DB := $(BINDIR)/xorF$(DB_SUFFIX)_$(N).exe
+ifeq ($(N), $(SUBN))
+	FNAME_SUFFIX := _$(N)
+else
+	FNAME_SUFFIX := _$(N)_$(SUBN)
+	ifeq ($(SUB_MULT), 1)
+		SUBMULT_SUFFIX := _submult
+	endif
+endif
+
+
+LUT_OUT := $(BINDIR)/lut_$(SUBN).exe
+BASE_OUT_FNAME := $(BINDIR)/xorF$(SUBMULT_SUFFIX)
+OUT := $(BASE_OUT_FNAME)$(FNAME_SUFFIX).exe
+OUT_DB := $(BASE_OUT_FNAME)$(DB_SUFFIX)$(FNAME_SUFFIX).exe
 
 WARN_FLAGS := -Wall -Wextra -pedantic
 DBFLAGS := -ggdb3 -gdwarf-5
@@ -30,9 +47,10 @@ LFLAGS := -mavx2 -I$(IDIR)
 
 CFLAGS := $(WARN_FLAGS) $(LFLAGS)
 
+BASE_OBJ_FNAME := $(ODIR)/%$(SUBMULT_SUFFIX)
 XORF_SRC := $(wildcard $(SRCDIR)/*.c)
-XORF_OBJ := $(XORF_SRC:$(SRCDIR)/%.c=$(ODIR)/%_$(N).o)
-XORF_DB_OBJ := $(XORF_SRC:$(SRCDIR)/%.c=$(ODIR)/%$(DB_SUFFIX)_$(N).o)
+XORF_OBJ := $(XORF_SRC:$(SRCDIR)/%.c=$(BASE_OBJ_FNAME)$(FNAME_SUFFIX).o)
+XORF_DB_OBJ := $(XORF_SRC:$(SRCDIR)/%.c=$(BASZ_OVJ_SUFFIX)$(DB_SUFFIX)$(FNAME_SUFFIX).o)
 
 IFILES := $(wildcard $(IDIR)/*.h)
 
@@ -73,7 +91,7 @@ $(OUT): $(XORF_OBJ) | $(BINDIR)
 pre:
 	$(CC) $(DEFINE_N) $(SRCDIR)/square_matrix.c -o mat_pre.c -E $(CFLAGS)
 
-$(ODIR)/%_$(N).o:$(SRCDIR)/%.c Makefile $(IFILES)| $(ODIR)
+$(BASE_OBJ_FNAME)$(FNAME_SUFFIX).o:$(SRCDIR)/%.c Makefile $(IFILES)| $(ODIR)
 	$(CC) $(DEFINE_N) $< -c -o $@ $(CFLAGS)
 
 # ---------------- db --------------------
@@ -85,7 +103,7 @@ comp_db: $(OUT_DB)
 $(OUT_DB): $(XORF_DB_OBJ) | $(BINDIR)
 	$(CC) $(DEFINE_N) $^ -o $@ $(CFLAGS) $(DBFLAGS)
 
-$(ODIR)/%$(DB_SUFFIX)_$(N).o:$(SRCDIR)/%.c Makefile $(IFILES)| $(ODIR)
+$(BASE_OBJ_FNAME)$(DB_SUFFIX)$(FNAME_SUFFIX).o:$(SRCDIR)/%.c Makefile $(IFILES)| $(ODIR)
 	$(CC) $(DEFINE_N) $< -c -o $@ $(CFLAGS) $(DBFLAGS)
 
 # ---------------- lut -------------------

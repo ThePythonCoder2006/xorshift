@@ -1,5 +1,5 @@
-#ifndef __HELPER__
-#define __HELPER__
+#ifndef __TIMER__
+#define __TIMER__
 
 #include <math.h>
 
@@ -20,9 +20,9 @@ void timer_start(timer *timer);
 double timer_stop(timer *timer);
 #endif
 
-#endif // __HELPER
+#endif // __TIMER__
 
-#ifdef __HELPER_IMPLEMENTATION__
+#ifdef __TIMER_IMPLEMENTATION__
 
 #ifdef _WIN32
 
@@ -42,6 +42,8 @@ double timer_stop(timer *timer)
   return interval;
 }
 
+#else /* _WIN32 */
+#error "timer is not (yet) defined for non windows systems (PR are welcome ;))"
 #endif
 
-#endif // __HELPER_IMPLEMENTATION__
+#endif // __TIMER_IMPLEMENTATION__

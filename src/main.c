@@ -9,21 +9,12 @@
 #include <immintrin.h>
 #include <windows.h>
 
-#define __HELPER_IMPLEMENTATION__
-#include "helper.h"
+#define __TIMER_IMPLEMENTATION__
+#include "timer.h"
 
 #include "constants.h"
-// #include "sqr_mat.h"
-// #include "submat.h"
 
-#define __SQUARE_MATRIX_IMPLEMENTATION__
-#define __SQUARE_MATRIX_SIZE__ (N)
-#define __SQUARE_MATRIX_TYPE__ sqr_mat
-#define __SQUARE_MATRIX_ROW_TYPE__ mat_row_t
-#define __SQUARE_MATRIX_NAMESPACE__ sqr_mat_
-#define __SQUARE_MATRIX_ROWS_PER_WIDTH__ ROWS_PER_WIDTH
-#define __SQUARE_MATRIX_GET_MAT__ GET_MAT
-#include "square_matrix.h"
+#define __SQUARE_MATRIX_ENABLE_WARNINGS__
 
 #if N > 64
 #define __SQUARE_MATRIX_IMPLEMENTATION__
@@ -35,6 +26,20 @@
 #define __SQUARE_MATRIX_GET_MAT__ GET_SUBMAT
 #include "square_matrix.h"
 #endif
+
+#define __SQUARE_MATRIX_IMPLEMENTATION__
+#define __SQUARE_MATRIX_SIZE__ (N)
+#define __SQUARE_MATRIX_SUBROW_COUNT__ SUBROWS_PER_ROW
+#define __SQUARE_MATRIX_TYPE__ sqr_mat
+#define __SQUARE_MATRIX_ROW_TYPE__ mat_row_t
+#define __SQUARE_MATRIX_NAMESPACE__ sqr_mat_
+#define __SQUARE_MATRIX_SUBMAT_NAMESPACE__ submat_
+#define __SQUARE_MATRIX_ROWS_PER_WIDTH__ ROWS_PER_WIDTH
+#define __SQUARE_MATRIX_GET_MAT__ GET_MAT
+#ifdef USE_SUBMAT_MULT
+#define __SQUARE_MATRIX_MULT_SUBMAT__
+#endif
+#include "square_matrix.h"
 
 #define CANDIDATES_CAP (32 * 1024U)
 #define SOLS_CAP (1024U)
@@ -74,19 +79,21 @@ uint64_t factors_of_P[] = {3, 5, 17, 257, 641, 65537, 274177, 6700417, 672804213
 #error "N must be (currently) either 32, 64 or 128"
 #endif
 
-int sqr_mat_T(sqr_mat *res, uint32_t a, uint32_t b, uint32_t c);
+submat R_i_lut[SUBN];
+submat L_i_lut[SUBN];
 
-DWORD compute_sols_fixed_a(void *arg);
-size_t compute_sols_fixed_a_inside(sols_list candidates, uint16_t a);
+int sqr_mat_T(sqr_mat *res, uint32_t a, uint32_t b, uint32_t c);
 int is_2_to_N_periodic(sqr_mat *T);
 int submat_copy(sqr_mat *dst, submat src, size_t pos);
 
-submat R_i_lut[N];
-submat L_i_lut[N];
+DWORD compute_sols_fixed_a(void *arg);
+size_t compute_sols_fixed_a_inside(sols_list candidates, uint16_t a);
 
 int main(int argc, char **argv)
 {
-  --argc, ++argv;
+  --argc, ++argv; // remove prog name
+
+  /* -------------------- loading the look-up table ----------------------*/
 
   // default name for the look-up table "lut_xx.data"
   char lut_fname[256] = LUT_FNAME;
@@ -110,10 +117,13 @@ int main(int argc, char **argv)
   fclose(f_R);
 
   // comfirmation line
-  printf("[INFO] computing xorshift coefficients for N = %ubits, with period, P = 0x%016" PRIx64 ", using %u threads\n", N, P, THREAD_COUNT);
+  printf("[INFO] computing xorshift coefficients for N = %ubits implemented using %" PRIu64 " uint%u_t%c, with period, P = 2^%u - 1, using %u threads\n", N, SUBROWS_PER_ROW, SUBN, SUBROWS_PER_ROW > 1 ? 's' : 0, N, THREAD_COUNT);
 
+  // setup and start timer
   timer global_time = {0};
   timer_start(&global_time);
+
+  /* ------------ prepare for multithreading ----------------*/
 
   HANDLE thread_array[THREAD_COUNT] = {0};
   DWORD thread_id_array[THREAD_COUNT] = {0};
@@ -156,8 +166,11 @@ int main(int argc, char **argv)
     sols_used_tot += sols_datas[i].used;
   }
 
+  // stop timer and report time
   double tot_time = timer_stop(&global_time);
   printf("total time took %lf s\n", tot_time);
+
+  /* ----------------- reporting the data ----------------------*/
 
   printf("found %" PRIu64 " triplets such that T = (I + L^a)(I + R^b)(I + L^b) has order of 2^%u - 1 = %" PRIu64 ": ", sols_used_tot, N, P);
   // printing the solutions by groups of nine
@@ -171,6 +184,7 @@ int main(int argc, char **argv)
   return 0;
 }
 
+// wrapper for win32 API
 DWORD compute_sols_fixed_a(void *arg)
 {
   compute_sols_data_t *data = (compute_sols_data_t *)arg;
@@ -179,6 +193,7 @@ DWORD compute_sols_fixed_a(void *arg)
   return 0;
 }
 
+/* finds values of b and c such that T(a, b, c) has period 2^N - 1 */
 size_t compute_sols_fixed_a_inside(sols_list sols, uint16_t a)
 {
   size_t sols_used = 0;
@@ -193,8 +208,6 @@ size_t compute_sols_fixed_a_inside(sols_list sols, uint16_t a)
     for (uint16_t c = a + 1; c < SUBN; ++c)
 #endif
     {
-      if (a == 5 && b == 24 && c == 1)
-        printf("good");
       sqr_mat_T(&T, a, b, c); // T = (I + L^a)(I + R^b)(I + L^c)
 
       if (is_2_to_N_periodic(&T))
@@ -210,11 +223,6 @@ size_t compute_sols_fixed_a_inside(sols_list sols, uint16_t a)
     }
   }
 
-  // printf("%llu candidates found : ", candidates_used);
-  // for (size_t i = 0; i < candidates_used; ++i)
-  //   printf("%u, %u, %u | ", candidates[i].a, candidates[i].b, candidates[i].c);
-  // putchar('\n');
-
   return sols_used;
 }
 
@@ -227,11 +235,7 @@ int is_2_to_N_periodic(sqr_mat *T)
 
   sqr_mat_pow_2_to_n(&test, *T, LOG_SUCC_P);
   if (memcmp(&test, T, sizeof(sqr_mat)) != 0)
-  {
-    // sqr_mat_print(test);
-    // printf("too high !!\n");
     return 0;
-  }
 
   // exclude candidates that have period < P
   for (size_t j = 0; j < num_facts_of_P; ++j)
@@ -249,10 +253,7 @@ int is_2_to_N_periodic(sqr_mat *T)
     sqr_mat_bin_exp(&test, *T, P / factors_of_P[j]);
 #endif
     if (memcmp(&I, &test, sizeof(sqr_mat)) == 0)
-    {
-      // printf("too low !!\n");
       return 0;
-    }
   }
 
   return 1;
@@ -275,7 +276,7 @@ int sqr_mat_T(sqr_mat *res, uint32_t a, uint32_t b, uint32_t c)
 #else
   submat_add(&T1, I, L_i_lut[a]);
   submat_add(&T2, I, R_i_lut[b]);
-  submat_add(&T3, I, L_i_lut[c]);
+  submat_add(&T3, I, R_i_lut[c]);
 
   submat_mult(&T_, T1, T2);
 
@@ -290,8 +291,11 @@ int sqr_mat_T(sqr_mat *res, uint32_t a, uint32_t b, uint32_t c)
 }
 
 #if N > 64
-int submat_copy(sqr_mat *restrict dst, submat src, size_t pos)
+int submat_copy(sqr_mat *dst, submat src, size_t pos)
 {
+  assert(pos < (SUBROWS_PER_ROW * SUBROWS_PER_ROW));
+
+#ifndef USE_SUBMAT_MULT
   subrow_t src_width[SUBROWS_PER_SUBWIDTH];
   // submat_print(src);
   // printf("\n---------------------------------\n\n");
@@ -303,6 +307,9 @@ int submat_copy(sqr_mat *restrict dst, submat src, size_t pos)
     for (uint32_t i = 0; i < SUBROWS_PER_SUBWIDTH; ++i)
       mat[off + (j * SUBROWS_PER_WIDTH + i) * SUBROWS_PER_ROW] = src_width[i];
   }
+#else
+  memcpy(&((*dst)[pos]), src, sizeof((*dst)[pos]));
+#endif
 
   return 0;
 }

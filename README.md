@@ -10,7 +10,6 @@ compile and run the project with `make`, by replacing `#ofbits` with either `32`
 
 ```(bash)
 > make N=#ofbits
-> mat.exe
 ```
 
 Other compile targets for make are:
@@ -20,6 +19,8 @@ Other compile targets for make are:
 * `db` : same as `plain` but with debug info
 
 Which creates a program named `xorF_#ofbits.exe` in the `bin/` folder
+
+With `N` > 64, you can add `SUB_MULT=1` to enable submatrix multiplication, which is faster on my machine.
 
 there is also `lut` to create `lut.exe` that is used to create `lut_#ofbits.data` which contains binary look up tables for the right and left shift matrices
 

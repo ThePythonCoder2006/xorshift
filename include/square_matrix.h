@@ -4,8 +4,23 @@
 #error "[ERRROR] you must define a matrix size before including this header !!!"
 #endif
 
+#if __SQUARE_MATRIX_SIZE__ <= 32U && defined(__SQUARE_MATRIX_MULT_SUBMAT__)
+#ifdef __SQUARE_MATRIX_ENABLE_WARNINGS__
+#warning "[WARNING] submat multiplication doesn't make sens for matrices that are not defined as lists of submatrices"
+#endif
+#undef __SQUARE_MATRIX_MULT_SUBMAT__
+#endif
+
+#if !defined(__SQUARE_MATRIX_SUBROW_COUNT__) && defined(__SQUARE_MATRIX_MULT_SUBMAT__)
+#error "[ERROR] you must define the subrow count before including this header !!!"
+#endif
+
 #ifndef __SQUARE_MATRIX_NAMESPACE__
 #error "[ERROR] you must define a namespace before including this header !!!"
+#endif
+
+#if !defined(__SQUARE_MATRIX_SUBMAT_NAMESPACE__) && defined(__SQUARE_MATRIX_MULT_SUBMAT__)
+#error "[ERROR] you must define the namespace used for including submats before including this header !!!"
 #endif
 
 #ifndef __SQUARE_MATRIX_TYPE__
@@ -17,14 +32,14 @@
 #endif
 
 #ifndef __SQUARE_MATRIX_ROWS_PER_WIDTH__
-#if __SQUARE_MATRIX_ENABLE_WARNINGS__
+#ifdef __SQUARE_MATRIX_ENABLE_WARNINGS__
 #warning "[WARNING] you should define the number of rows per width before including this header !!!"
 #endif
 #define __SQUARE_MATRIX_ROWS_PER_WIDTH__ ROWS_PER_WIDTH /*default*/
 #endif
 
 #ifndef __SQUARE_MATRIX_GET_MAT__
-#if __SQUARE_MATRIX_ENABLE_WARNINGS__
+#ifdef __SQUARE_MATRIX_ENABLE_WARNINGS__
 #warning "[WARNING] you should define a way to get a matrix before including this header !!!"
 #endif
 #define __SQUARE_MATRIX_GET_MAT__ GET_MAT
@@ -60,6 +75,7 @@
 #error "N must (currently) either 32, 64 or 128"
 #endif
 
+/* res MAY point to either a or b */
 int FN_NAME(add)(__SQUARE_MATRIX_TYPE__ *res, __SQUARE_MATRIX_TYPE__ a, __SQUARE_MATRIX_TYPE__ b)
 {
 #ifndef __SQUARE_MATRIX_MULT_SUBMAT__
@@ -69,17 +85,17 @@ int FN_NAME(add)(__SQUARE_MATRIX_TYPE__ *res, __SQUARE_MATRIX_TYPE__ a, __SQUARE
   return 0;
 
 #else
-
-  for (uint8_t i = 0; i < __SQUARE_MATRIX_SUBROW_COUNT__; ++i)
+  for (uint8_t i = 0; i < __SQUARE_MATRIX_SUBROW_COUNT__ * __SQUARE_MATRIX_SUBROW_COUNT__; ++i)
     SUBMAT_FN_NAME(add)
-    ()
-
+  ((*res) + i, a[i], b[i]);
+  return 0;
 #endif
 }
 
-int FN_NAME(mult)(__SQUARE_MATRIX_TYPE__ *restrict res, __SQUARE_MATRIX_TYPE__ a, __SQUARE_MATRIX_TYPE__ b)
+/* res MUST NOT point to either a nor b !! or else the result will be garbage !!*/
+int FN_NAME(mult)(__SQUARE_MATRIX_TYPE__ *res, __SQUARE_MATRIX_TYPE__ a, __SQUARE_MATRIX_TYPE__ b)
 {
-#if __SQUARE_MATRIX_SIZE__ <= 64U || !defined(__SQUARE_MATRIX_MULT_SUBMAT__)
+#ifndef __SQUARE_MATRIX_MULT_SUBMAT__
 
 #if __SQUARE_MATRIX_SIZE__ == 128U
   __m256i mask = _mm256_set1_epi32(0x80000000U);
@@ -89,7 +105,7 @@ int FN_NAME(mult)(__SQUARE_MATRIX_TYPE__ *restrict res, __SQUARE_MATRIX_TYPE__ a
 
   for (uint32_t i = 0; i < (__SQUARE_MATRIX_SIZE__ / __SQUARE_MATRIX_ROWS_PER_WIDTH__); ++i)
   {
-    MAT_ROWS_WIDTH(*res, i) = _mm256_set_zero();
+    MAT_ROWS_WIDTH(*res, i) = _mm256_setzero_si256();
 
     for (uint32_t j = 0; j < __SQUARE_MATRIX_SIZE__; ++j)
     {
@@ -105,15 +121,84 @@ int FN_NAME(mult)(__SQUARE_MATRIX_TYPE__ *restrict res, __SQUARE_MATRIX_TYPE__ a
   }
 
 #elif defined(__SQUARE_MATRIX_MULT_STRASSEN__)
+#error "[ERROR] STRASSEN fast matrix multiplication is not yet implemented !!!"
+#else
+#if N == 128U
+  enum SUBMATRIX_ELE_e
+  {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    _I,
+    J,
+    K,
+    L,
+    M,
+    _N,
+    O,
+    _P
+  };
+
+/* expects a submat tmp for temporary computations*/
+#define COMPUTE_CELL(subres, A, B, C, D, A_, E_, I_, M_)                             \
+  (SUBMAT_FN_NAME(mult)(subres, A, A_) ||                                            \
+   SUBMAT_FN_NAME(mult)(&tmp, B, E_) || SUBMAT_FN_NAME(add)(subres, *subres, tmp) || \
+   SUBMAT_FN_NAME(mult)(&tmp, C, I_) || SUBMAT_FN_NAME(add)(subres, *subres, tmp) || \
+   SUBMAT_FN_NAME(mult)(&tmp, D, M_) || SUBMAT_FN_NAME(add)(subres, *subres, tmp))
+
+  submat tmp = {0};
+
+  if (COMPUTE_CELL(&((*res)[0]), a[A], a[B], a[C], a[D], b[A], b[E], b[_I], b[M]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[1]), a[A], a[B], a[C], a[D], b[B], b[F], b[J], b[_N]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[2]), a[A], a[B], a[C], a[D], b[C], b[G], b[K], b[O]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[3]), a[A], a[B], a[C], a[D], b[D], b[H], b[L], b[_P]))
+    return 1;
+
+  if (COMPUTE_CELL(&((*res)[4]), a[E], a[F], a[G], a[H], b[A], b[E], b[_I], b[M]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[5]), a[E], a[F], a[G], a[H], b[B], b[F], b[J], b[_N]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[6]), a[E], a[F], a[G], a[H], b[C], b[G], b[K], b[O]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[7]), a[E], a[F], a[G], a[H], b[D], b[H], b[L], b[_P]))
+    return 1;
+
+  if (COMPUTE_CELL(&((*res)[8]), a[_I], a[J], a[K], a[L], b[A], b[E], b[_I], b[M]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[9]), a[_I], a[J], a[K], a[L], b[B], b[F], b[J], b[_N]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[10]), a[_I], a[J], a[K], a[L], b[C], b[G], b[K], b[O]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[11]), a[_I], a[J], a[K], a[L], b[D], b[H], b[L], b[_P]))
+    return 1;
+
+  if (COMPUTE_CELL(&((*res)[12]), a[M], a[_N], a[O], a[_P], b[A], b[E], b[_I], b[M]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[13]), a[M], a[_N], a[O], a[_P], b[B], b[F], b[J], b[_N]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[14]), a[M], a[_N], a[O], a[_P], b[C], b[G], b[K], b[O]))
+    return 1;
+  if (COMPUTE_CELL(&((*res)[15]), a[M], a[_N], a[O], a[_P], b[D], b[H], b[L], b[_P]))
+    return 1;
 
 #else
+#error "[ERROR] submat multiplication is not (yet) implemeneted for N != 128U"
+#endif /* N == 128U */
 
-#endif
+#endif /* SQUARE_MATRIX_MULT_STRASSEN__*/
 
   return 0;
 }
 
-int FN_NAME(pow_2_to_n)(__SQUARE_MATRIX_TYPE__ *restrict res, __SQUARE_MATRIX_TYPE__ a, uint32_t n)
+int FN_NAME(pow_2_to_n)(__SQUARE_MATRIX_TYPE__ *res, __SQUARE_MATRIX_TYPE__ a, uint32_t n)
 {
   __SQUARE_MATRIX_TYPE__ tmp = {0};
   memcpy(&tmp, a, sizeof(tmp));
@@ -126,7 +211,7 @@ int FN_NAME(pow_2_to_n)(__SQUARE_MATRIX_TYPE__ *restrict res, __SQUARE_MATRIX_TY
   return 0;
 }
 
-int FN_NAME(bin_exp)(__SQUARE_MATRIX_TYPE__ *restrict res, __SQUARE_MATRIX_TYPE__ a, size_t n)
+int FN_NAME(bin_exp)(__SQUARE_MATRIX_TYPE__ *res, __SQUARE_MATRIX_TYPE__ a, size_t n)
 {
   memcpy(res, &I, sizeof(*res));
 
@@ -177,10 +262,13 @@ int FN_NAME(print)(__SQUARE_MATRIX_TYPE__ val)
 
 #undef __SQUARE_MATRIX_IMPLEMENTATION__
 #undef __SQUARE_MATRIX_SIZE__
+#undef __SQUARE_MATRIX_SUBROW_COUNT__
 #undef __SQUARE_MATRIX_TYPE__
 #undef __SQUARE_MATRIX_ROW_TYPE__
 #undef __SQUARE_MATRIX_NAMESPACE__
+#undef __SQUARE_MATRIX_SUBMAT_NAMESPACE__
 #undef __SQUARE_MATRIX_ROWS_PER_WIDTH__
 #undef __SQUARE_MATRIX_GET_MAT__
+#undef __SQUARE_MATRIX_MULT_SUBMAT__
 
 #endif // __SQUARE_MATRIX_IMPLEMENTATION__
